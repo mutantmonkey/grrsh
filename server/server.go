@@ -79,9 +79,7 @@ func main() {
 			log.Printf("Failed to run shell: %v", err)
 		}
 
-		go func() {
-			session.Wait()
-			terminal.Restore(0, oldState)
-		}()
+		session.Wait()
+		terminal.Restore(0, oldState)
 	}
 }
