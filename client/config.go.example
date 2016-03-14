@@ -1,0 +1,9 @@
+package main
+
+const (
+	serverAddr = "127.0.0.1:31337"
+	defaultShell = "bash"
+	clientPublicKey = ""
+	clientPrivateKey = ``
+	serverPublicKey = ""
+)

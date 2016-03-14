@@ -1,0 +1,8 @@
+package main
+
+const (
+	listenAddr = ":31337"
+	clientPublicKey = ""
+	serverPublicKey = ""
+	serverPrivateKey = ``
+)

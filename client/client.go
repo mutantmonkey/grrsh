@@ -1,43 +1,44 @@
 package main
 
 import (
+	"errors"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"github.com/kr/pty"
 	"golang.org/x/crypto/ssh"
 )
 
-const (
-	remoteServer = "127.0.0.1:31337"
-	defaultShell = "bash"
-)
+func checkServerKey(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+	receivedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
+
+	if receivedKey == serverPublicKey {
+		return nil, nil
+	} else {
+		return nil, errors.New("Server key does not match")
+	}
+}
 
 func main() {
 	config := &ssh.ServerConfig{
-		NoClientAuth: true,
+		PublicKeyCallback: checkServerKey,
 	}
 
-	privateBytes, err := ioutil.ReadFile("id_rsa")
+	private, err := ssh.ParsePrivateKey([]byte(clientPrivateKey))
 	if err != nil {
-		log.Fatalf("Failed to load private key: %v", err)
-	}
-
-	private, err := ssh.ParsePrivateKey(privateBytes)
-	if err != nil {
-		log.Fatalf("Failed to parse private key: %v", err)
+		log.Fatalf("Failed to parse client private key: %v", err)
 	}
 
 	config.AddHostKey(private)
 
-	c, err := net.Dial("tcp", remoteServer)
+	c, err := net.Dial("tcp", serverAddr)
 	if err != nil {
-		log.Fatalf("Failed to connect to %q: %v", remoteServer, err)
+		log.Fatalf("Failed to connect to %q: %v", serverAddr, err)
 	}
 
 	_, chans, reqs, err := ssh.NewServerConn(c, config)

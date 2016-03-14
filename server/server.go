@@ -1,28 +1,44 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"net"
 	"os"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 )
 
-const listenAddr = ":31337"
+func checkClientKey(hostname string, remote net.Addr, key ssh.PublicKey) error {
+	receivedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
+
+	if receivedKey == clientPublicKey {
+		return nil
+	} else {
+		return errors.New("Client key does not match")
+	}
+}
 
 func main() {
+	private, err := ssh.ParsePrivateKey([]byte(serverPrivateKey))
+	if err != nil {
+		log.Fatalf("Failed to parse client private key: %v", err)
+	}
+
 	auths := []ssh.AuthMethod{
-		ssh.Password("123456"),
+		ssh.PublicKeys(private),
 	}
 
 	config := &ssh.ClientConfig{
 		User: "user",
 		Auth: auths,
+		HostKeyCallback: checkClientKey,
 	}
 
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		log.Fatalf("Failed to listen on 31337: %v", err)
+		log.Fatalf("Failed to listen on %q: %v", listenAddr, err)
 	}
 	for {
 		conn, err := ln.Accept()
