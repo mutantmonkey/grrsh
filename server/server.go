@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 func checkClientKey(hostname string, remote net.Addr, key ssh.PublicKey) error {
@@ -63,6 +64,13 @@ func main() {
 		}
 		defer session.Close()
 
+		oldState, err := terminal.MakeRaw(0)
+		if err != nil {
+			log.Printf("Failed to set terminal to raw mode")
+			continue
+		}
+		defer terminal.Restore(0, oldState)
+
 		session.Stderr = os.Stderr
 		session.Stdin = os.Stdin
 		session.Stdout = os.Stdout
@@ -70,5 +78,10 @@ func main() {
 		if err := session.Shell(); err != nil {
 			log.Printf("Failed to run shell: %v", err)
 		}
+
+		go func() {
+			session.Wait()
+			terminal.Restore(0, oldState)
+		}()
 	}
 }
