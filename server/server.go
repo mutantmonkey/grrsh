@@ -32,8 +32,8 @@ func main() {
 	}
 
 	config := &ssh.ClientConfig{
-		User: "user",
-		Auth: auths,
+		User:            "user",
+		Auth:            auths,
 		HostKeyCallback: checkClientKey,
 	}
 
