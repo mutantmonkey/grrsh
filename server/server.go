@@ -1,11 +1,14 @@
 package main
 
 import (
+	"encoding/binary"
 	"errors"
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/terminal"
@@ -19,6 +22,19 @@ func checkClientKey(hostname string, remote net.Addr, key ssh.PublicKey) error {
 	} else {
 		return errors.New("Client key does not match")
 	}
+}
+
+func requestWindowChange(session *ssh.Session) {
+	width, height, err := terminal.GetSize(0)
+	if err != nil {
+		return
+	}
+
+	payload := make([]byte, 8)
+	binary.BigEndian.PutUint32(payload, uint32(width))
+	binary.BigEndian.PutUint32(payload[4:], uint32(height))
+
+	session.SendRequest("window-change", true, payload)
 }
 
 func main() {
@@ -70,6 +86,16 @@ func main() {
 			continue
 		}
 		defer terminal.Restore(0, oldState)
+		requestWindowChange(session)
+
+		// handle terminal resizes
+		resizeChan := make(chan os.Signal)
+		go func() {
+			for _ = range resizeChan {
+				requestWindowChange(session)
+			}
+		}()
+		signal.Notify(resizeChan, syscall.SIGWINCH)
 
 		session.Stderr = os.Stderr
 		session.Stdin = os.Stdin

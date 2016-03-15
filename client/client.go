@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"errors"
 	"io"
 	"log"
@@ -9,6 +10,8 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
+	"unsafe"
 
 	"github.com/kr/pty"
 	"golang.org/x/crypto/ssh"
@@ -23,6 +26,27 @@ func checkServerKey(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions,
 	} else {
 		return nil, errors.New("Server key does not match")
 	}
+}
+
+type WinSize struct {
+	Height uint16
+	Width  uint16
+	x      uint16
+	y      uint16
+}
+
+// parse window size from payload
+func parseWinSize(b []byte) *WinSize {
+	ws := &WinSize{
+		Width:  uint16(binary.BigEndian.Uint32(b)),
+		Height: uint16(binary.BigEndian.Uint32(b[4:])),
+	}
+	return ws
+}
+
+// update window size of a pty
+func setWinSize(fd uintptr, ws *WinSize) {
+	syscall.Syscall(syscall.SYS_IOCTL, fd, uintptr(syscall.TIOCSWINSZ), uintptr(unsafe.Pointer(ws)))
 }
 
 func main() {
@@ -54,6 +78,7 @@ func main() {
 			newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
 			continue
 		}
+
 		channel, requests, err := newChannel.Accept()
 		if err != nil {
 			log.Fatal("Could not accept channel: %v", err)
@@ -98,6 +123,10 @@ func main() {
 						// is allowed
 						ok = false
 					}
+				case "window-change":
+					ok = true
+					ws := parseWinSize(req.Payload)
+					setWinSize(shellf.Fd(), ws)
 				}
 				req.Reply(ok, nil)
 			}
