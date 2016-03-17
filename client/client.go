@@ -28,24 +28,24 @@ func checkServerKey(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions,
 	}
 }
 
-type WinSize struct {
-	Height uint16
-	Width  uint16
+type winSize struct {
+	height uint16
+	width  uint16
 	x      uint16
 	y      uint16
 }
 
 // parse window size from payload
-func parseWinSize(b []byte) *WinSize {
-	ws := &WinSize{
-		Width:  uint16(binary.BigEndian.Uint32(b)),
-		Height: uint16(binary.BigEndian.Uint32(b[4:])),
+func parseWinSize(b []byte) *winSize {
+	ws := &winSize{
+		width:  uint16(binary.BigEndian.Uint32(b)),
+		height: uint16(binary.BigEndian.Uint32(b[4:])),
 	}
 	return ws
 }
 
 // update window size of a pty
-func setWinSize(fd uintptr, ws *WinSize) {
+func setWinSize(fd uintptr, ws *winSize) {
 	syscall.Syscall(syscall.SYS_IOCTL, fd, uintptr(syscall.TIOCSWINSZ), uintptr(unsafe.Pointer(ws)))
 }
 
