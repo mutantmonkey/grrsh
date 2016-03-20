@@ -64,7 +64,7 @@ func (r *remoteForwards) Set(value string) error {
 
 func main() {
 	var remoteForwardsFlag remoteForwards
-	flag.Var(&remoteForwardsFlag, "L", "port:host:hostport")
+	flag.Var(&remoteForwardsFlag, "L", "[bind_address:]port:host:hostport")
 	flag.Parse()
 
 	private, err := ssh.ParsePrivateKey([]byte(serverPrivateKey))
