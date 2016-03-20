@@ -45,16 +45,13 @@ func main() {
 	go ssh.DiscardRequests(reqs)
 
 	for newChannel := range chans {
-		if newChannel.ChannelType() != "session" {
+		switch newChannel.ChannelType() {
+		case "direct-tcpip":
+			startDirectTcpip(newChannel)
+		case "session":
+			startSession(newChannel)
+		default:
 			newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
-			continue
 		}
-
-		channel, requests, err := newChannel.Accept()
-		if err != nil {
-			log.Fatal("Could not accept channel: %v", err)
-		}
-
-		startSession(channel, requests)
 	}
 }

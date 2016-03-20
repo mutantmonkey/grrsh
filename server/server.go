@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/binary"
 	"errors"
+	"flag"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -37,7 +39,34 @@ func requestWindowChange(session *ssh.Session) {
 	session.SendRequest("window-change", true, payload)
 }
 
+type remoteForwards []forwardPair
+
+func (r *remoteForwards) String() string {
+	return fmt.Sprint(*r)
+}
+
+func (r *remoteForwards) Set(value string) error {
+	f := forwardPair{}
+	s := strings.Split(value, ":")
+	if len(s) == 3 {
+		f.laddr = fmt.Sprintf("localhost:%s", s[0])
+		f.raddr = fmt.Sprintf("%s:%s", s[1], s[2])
+	} else if len(s) == 4 {
+		f.laddr = fmt.Sprintf("%s:%s", s[0], s[1])
+		f.raddr = fmt.Sprintf("%s:%s", s[2], s[3])
+	} else {
+		return errors.New("invalid forwarding specification")
+	}
+
+	*r = append(*r, f)
+	return nil
+}
+
 func main() {
+	var remoteForwardsFlag remoteForwards
+	flag.Var(&remoteForwardsFlag, "L", "port:host:hostport")
+	flag.Parse()
+
 	private, err := ssh.ParsePrivateKey([]byte(serverPrivateKey))
 	if err != nil {
 		log.Fatalf("Failed to parse client private key: %v", err)
@@ -105,7 +134,21 @@ func main() {
 			log.Printf("Failed to run shell: %v", err)
 		}
 
+		messages := make(chan string)
+
+		for _, forward := range remoteForwardsFlag {
+			log.Printf("Forward remote %v to local %v", forward.raddr, forward.laddr)
+			go func() {
+				err = forwardRemote(client, messages, forward)
+				if err != nil {
+					log.Printf("Failed to forward remote port: %v", err)
+				}
+			}()
+		}
+
 		session.Wait()
 		terminal.Restore(0, oldState)
+
+		messages <- "close"
 	}
 }

@@ -14,7 +14,12 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func startSession(channel ssh.Channel, requests <-chan *ssh.Request) {
+func startSession(newChannel ssh.NewChannel) {
+	channel, requests, err := newChannel.Accept()
+	if err != nil {
+		log.Fatal("Could not accept channel: %v", err)
+	}
+
 	shell := exec.Command(defaultShell)
 
 	teardown := func() {
