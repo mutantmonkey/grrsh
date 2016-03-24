@@ -149,6 +149,8 @@ func main() {
 		session.Wait()
 		terminal.Restore(0, oldState)
 
-		messages <- "close"
+		go func() {
+			messages <- "close"
+		}()
 	}
 }
