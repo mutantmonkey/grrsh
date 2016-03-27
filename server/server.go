@@ -39,6 +39,25 @@ func requestWindowChange(session *ssh.Session) {
 	session.SendRequest("window-change", true, payload)
 }
 
+type hostport string
+
+func (h *hostport) String() string {
+	return fmt.Sprint(*h)
+}
+
+func (h *hostport) Set(value string) error {
+	s := strings.Split(value, ":")
+	if len(s) == 1 {
+		*h = hostport(fmt.Sprintf("localhost:%s", s[0]))
+	} else if len(s) == 2 {
+		*h = hostport(value)
+	} else {
+		return errors.New("invalid dynamic forwarding specification")
+	}
+
+	return nil
+}
+
 type remoteForwards []forwardPair
 
 func (r *remoteForwards) String() string {
@@ -63,7 +82,9 @@ func (r *remoteForwards) Set(value string) error {
 }
 
 func main() {
+	var socksFlag hostport
 	var remoteForwardsFlag remoteForwards
+	flag.Var(&socksFlag, "D", "[bind_address:]port")
 	flag.Var(&remoteForwardsFlag, "L", "[bind_address:]port:host:hostport")
 	flag.Parse()
 
@@ -134,12 +155,22 @@ func main() {
 			log.Printf("Failed to run shell: %v", err)
 		}
 
-		messages := make(chan string)
+		closedChannel := make(chan string)
+
+		if len(socksFlag) > 0 {
+			log.Printf("Forward SOCKS5 traffic on %v", socksFlag)
+			go func() {
+				err = socksListen(client, closedChannel, string(socksFlag))
+				if err != nil {
+					log.Printf("Failed to open SOCKS5 listener: %v", err)
+				}
+			}()
+		}
 
 		for _, forward := range remoteForwardsFlag {
 			log.Printf("Forward remote %v to local %v", forward.raddr, forward.laddr)
 			go func() {
-				err = forwardRemote(client, messages, forward)
+				err = forwardRemote(client, closedChannel, forward)
 				if err != nil {
 					log.Printf("Failed to forward remote port: %v", err)
 				}
@@ -150,7 +181,7 @@ func main() {
 		terminal.Restore(0, oldState)
 
 		go func() {
-			messages <- "close"
+			closedChannel <- "close"
 		}()
 	}
 }

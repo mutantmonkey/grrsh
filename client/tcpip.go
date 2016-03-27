@@ -19,16 +19,8 @@ type channelOpenDirectMsg struct {
 }
 
 func startDirectTcpip(newChannel ssh.NewChannel) {
-	channel, requests, err := newChannel.Accept()
-	if err != nil {
-		log.Printf("Could not accept channel: %v", err)
-		return
-	}
-
-	go ssh.DiscardRequests(requests)
-
 	p := &channelOpenDirectMsg{}
-	err = ssh.Unmarshal(newChannel.ExtraData(), p)
+	err := ssh.Unmarshal(newChannel.ExtraData(), p)
 	if err != nil {
 		log.Printf("Could not unmarshal extra data: %v", err)
 		return
@@ -36,9 +28,17 @@ func startDirectTcpip(newChannel ssh.NewChannel) {
 
 	conn, err := net.Dial("tcp", net.JoinHostPort(p.Raddr, fmt.Sprint(p.Rport)))
 	if err != nil {
-		log.Printf("Failed to connect: %v", err)
+		newChannel.Reject(ssh.ConnectionFailed, fmt.Sprint(err))
 		return
 	}
+
+	channel, requests, err := newChannel.Accept()
+	if err != nil {
+		log.Printf("Could not accept channel: %v", err)
+		return
+	}
+
+	go ssh.DiscardRequests(requests)
 
 	teardown := func() {
 		channel.Close()
