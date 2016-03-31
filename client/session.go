@@ -17,7 +17,7 @@ import (
 func startSession(newChannel ssh.NewChannel) {
 	channel, requests, err := newChannel.Accept()
 	if err != nil {
-		log.Fatal("Could not accept channel: %v", err)
+		log.Fatalf("Could not accept channel: %v", err)
 	}
 
 	shell := exec.Command(defaultShell)
