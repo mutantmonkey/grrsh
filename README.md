@@ -4,7 +4,7 @@ Reverse SSH
 
 ## License
 ```
-Copyright (C) 2016 mutantmonkey
+Copyright (C) 2016-2017 mutantmonkey
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
