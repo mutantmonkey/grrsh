@@ -1,22 +1,25 @@
 package main
 
 import (
-	"errors"
+	"bytes"
+	"fmt"
 	"log"
 	"net"
-	"strings"
 
 	"golang.org/x/crypto/ssh"
 )
 
 // compare received server key with configured server key
 func checkServerKey(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-	receivedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
+	checkKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(serverPublicKey))
+	if err != nil {
+		return nil, err
+	}
 
-	if receivedKey == serverPublicKey {
+	if bytes.Equal(key.Marshal(), checkKey.Marshal()) {
 		return nil, nil
 	} else {
-		return nil, errors.New("Server key does not match")
+		return nil, fmt.Errorf("ssh: server key mismatch")
 	}
 }
 

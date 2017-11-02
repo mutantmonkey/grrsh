@@ -1,0 +1,8 @@
+package main
+
+const (
+	listenAddr       = "SERVER_LISTEN_ADDR"
+	clientPublicKey  = `CLIENT_PUBLIC_KEY`
+	serverPublicKey  = `SERVER_PUBLIC_KEY`
+	serverPrivateKey = `SERVER_PRIVATE_KEY`
+)

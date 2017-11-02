@@ -16,16 +16,6 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-func checkClientKey(hostname string, remote net.Addr, key ssh.PublicKey) error {
-	receivedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
-
-	if receivedKey == clientPublicKey {
-		return nil
-	} else {
-		return errors.New("Client key does not match")
-	}
-}
-
 func requestWindowChange(session *ssh.Session) {
 	width, height, err := terminal.GetSize(0)
 	if err != nil {
@@ -90,17 +80,22 @@ func main() {
 
 	private, err := ssh.ParsePrivateKey([]byte(serverPrivateKey))
 	if err != nil {
-		log.Fatalf("Failed to parse client private key: %v", err)
+		log.Fatalf("Failed to parse server private key: %v", err)
 	}
 
 	auths := []ssh.AuthMethod{
 		ssh.PublicKeys(private),
 	}
 
+	hostKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(clientPublicKey))
+	if err != nil {
+		log.Fatalf("Failed to parse client public key: %v", err)
+	}
+
 	config := &ssh.ClientConfig{
 		User:            "user",
 		Auth:            auths,
-		HostKeyCallback: checkClientKey,
+		HostKeyCallback: ssh.FixedHostKey(hostKey),
 	}
 
 	ln, err := net.Listen("tcp", listenAddr)
