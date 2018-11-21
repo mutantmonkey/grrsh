@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 
+	"github.com/cenkalti/backoff"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -40,21 +41,34 @@ func main() {
 		log.Fatalf("Failed to connect to %q: %v", serverAddr, err)
 	}
 
-	_, chans, reqs, err := ssh.NewServerConn(c, config)
-	if err != nil {
-		log.Fatalf("Failed to handshake: %v", err)
-	}
+	for {
+		var c net.Conn
+		dialOp := func() (err error) {
+			c, err = dialer.Dial("tcp", serverAddr)
+			return err
+		}
 
-	go ssh.DiscardRequests(reqs)
+		backoff.Retry(dialOp, backoff.NewExponentialBackOff())
+		if err != nil {
+			log.Fatalf("Failed to connect to %q: %v", serverAddr, err)
+		}
 
-	for newChannel := range chans {
-		switch newChannel.ChannelType() {
-		case "direct-tcpip":
-			startDirectTcpip(newChannel)
-		case "session":
-			startSession(newChannel)
-		default:
-			newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
+		_, chans, reqs, err := ssh.NewServerConn(c, config)
+		if err != nil {
+			log.Fatalf("Failed to handshake: %v", err)
+		}
+
+		go ssh.DiscardRequests(reqs)
+
+		for newChannel := range chans {
+			switch newChannel.ChannelType() {
+			case "direct-tcpip":
+				startDirectTcpip(newChannel)
+			case "session":
+				startSession(newChannel)
+			default:
+				newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
+			}
 		}
 	}
 }
