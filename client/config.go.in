@@ -3,6 +3,7 @@ package main
 const (
 	serverAddr       = "SERVER_ADDR"
 	defaultShell     = "DEFAULT_SHELL"
+	clientProxyUrl   = "CLIENT_PROXY_URL"
 	clientPublicKey  = `CLIENT_PUBLIC_KEY`
 	clientPrivateKey = `CLIENT_PRIVATE_KEY`
 	serverPublicKey  = `SERVER_PUBLIC_KEY`

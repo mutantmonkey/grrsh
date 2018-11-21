@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/url"
 
 	"github.com/cenkalti/backoff"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/net/proxy"
 )
 
 // compare received server key with configured server key
@@ -24,6 +26,24 @@ func checkServerKey(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions,
 	}
 }
 
+func prepareProxyDialer(proxyUrl string) (dialer proxy.Dialer, err error) {
+	dialer = proxy.Direct
+
+	if len(proxyUrl) > 0 {
+		u, err := url.Parse(proxyUrl)
+		if err != nil {
+			return dialer, err
+		}
+
+		dialer, err = proxy.FromURL(u, dialer)
+		if err != nil {
+			return dialer, err
+		}
+	}
+
+	return
+}
+
 func main() {
 	config := &ssh.ServerConfig{
 		PublicKeyCallback: checkServerKey,
@@ -36,9 +56,9 @@ func main() {
 
 	config.AddHostKey(private)
 
-	c, err := net.Dial("tcp", serverAddr)
+	dialer, err := prepareProxyDialer(clientProxyUrl)
 	if err != nil {
-		log.Fatalf("Failed to connect to %q: %v", serverAddr, err)
+		log.Fatalf("Failed to create proxy dialer: %v", err)
 	}
 
 	for {
