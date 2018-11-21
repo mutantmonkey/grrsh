@@ -5,11 +5,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 
 	"golang.org/x/crypto/ssh"
@@ -74,9 +76,15 @@ func (r *remoteForwards) Set(value string) error {
 func main() {
 	var socksFlag hostport
 	var remoteForwardsFlag remoteForwards
+	var listenersOnly bool
 	flag.Var(&socksFlag, "D", "[bind_address:]port")
 	flag.Var(&remoteForwardsFlag, "L", "[bind_address:]port:host:hostport")
+	flag.BoolVar(&listenersOnly, "z", false, "")
 	flag.Parse()
+
+	if listenersOnly {
+		log.Print("Local listeners only mode: each remote connection will open a local port")
+	}
 
 	private, err := ssh.ParsePrivateKey([]byte(serverPrivateKey))
 	if err != nil {
@@ -111,72 +119,120 @@ func main() {
 
 		log.Printf("New connection from %v", conn.RemoteAddr())
 
-		sshConn, chans, reqs, err := ssh.NewClientConn(conn, "addr", config)
-		if err != nil {
-			log.Printf("Failed to handshake: %v", err)
-			continue
-		}
-
-		client := ssh.NewClient(sshConn, chans, reqs)
-		session, err := client.NewSession()
-		if err != nil {
-			log.Printf("Failed to create session: %v", err)
-			continue
-		}
-		defer session.Close()
-
-		oldState, err := terminal.MakeRaw(0)
-		if err != nil {
-			log.Printf("Failed to set terminal to raw mode")
-			continue
-		}
-		defer terminal.Restore(0, oldState)
-		requestWindowChange(session)
-
-		// handle terminal resizes
-		resizeChan := make(chan os.Signal)
-		go func() {
-			for _ = range resizeChan {
-				requestWindowChange(session)
+		if listenersOnly {
+			localLn, err := net.Listen("tcp", "[::1]:")
+			if err != nil {
+				log.Printf("Failed to open local listener: %v", err)
+				continue
 			}
-		}()
-		signal.Notify(resizeChan, syscall.SIGWINCH)
 
-		session.Stderr = os.Stderr
-		session.Stdin = os.Stdin
-		session.Stdout = os.Stdout
+			log.Printf("Local listener for %v opened at %v", conn.RemoteAddr(), localLn.Addr())
 
-		if err := session.Shell(); err != nil {
-			log.Printf("Failed to run shell: %v", err)
-		}
+			// TODO: close the listener when the remote disconnects
+			// use waitgroups maybe?
+			// XXX: there's actually a problem on the client where
+			// it kills everything too early
 
-		closedChannel := make(chan string)
+			go func(c net.Conn, l net.Listener) {
+				for {
+					localConn, err := l.Accept()
+					if err != nil {
+						log.Printf("Failed to accept incoming local connection: %v", err)
+						continue
+					}
 
-		if len(socksFlag) > 0 {
-			log.Printf("Forward SOCKS5 traffic on %v", socksFlag)
+					go func(rc net.Conn, lc net.Conn) {
+						teardown := func() {
+							lc.Close()
+						}
+
+						// connect the pipes
+						var once sync.Once
+						go func() {
+							io.Copy(rc, lc)
+							once.Do(teardown)
+						}()
+
+						io.Copy(lc, rc)
+						once.Do(teardown)
+					}(c, localConn)
+				}
+
+				/*wg.Wait()
+				l.Close()
+				conn.Close()*/
+			}(conn, localLn)
+
+			// TODO: close listener and remote connection when all
+			// local connections are closed
+		} else {
+			sshConn, chans, reqs, err := ssh.NewClientConn(conn, "addr", config)
+			if err != nil {
+				log.Printf("Failed to handshake: %v", err)
+				continue
+			}
+
+			client := ssh.NewClient(sshConn, chans, reqs)
+			session, err := client.NewSession()
+			if err != nil {
+				log.Printf("Failed to create session: %v", err)
+				continue
+			}
+			defer session.Close()
+
+			oldState, err := terminal.MakeRaw(0)
+			if err != nil {
+				log.Printf("Failed to set terminal to raw mode")
+				continue
+			}
+			defer terminal.Restore(0, oldState)
+			requestWindowChange(session)
+
+			// handle terminal resizes
+			resizeChan := make(chan os.Signal)
 			go func() {
-				err = socksListen(client, closedChannel, string(socksFlag))
-				if err != nil {
-					log.Printf("Failed to open SOCKS5 listener: %v", err)
+				for _ = range resizeChan {
+					requestWindowChange(session)
 				}
 			}()
-		}
+			signal.Notify(resizeChan, syscall.SIGWINCH)
 
-		for _, forward := range remoteForwardsFlag {
-			log.Printf("Forward remote %v to local %v", forward.raddr, forward.laddr)
+			session.Stderr = os.Stderr
+			session.Stdin = os.Stdin
+			session.Stdout = os.Stdout
+
+			if err := session.Shell(); err != nil {
+				log.Printf("Failed to run shell: %v", err)
+			}
+
+			closedChannel := make(chan string)
+
+			if len(socksFlag) > 0 {
+				log.Printf("Forward SOCKS5 traffic on %v", socksFlag)
+				go func() {
+					err = socksListen(client, closedChannel, string(socksFlag))
+					if err != nil {
+						log.Printf("Failed to open SOCKS5 listener: %v", err)
+					}
+				}()
+			}
+
+			for _, forward := range remoteForwardsFlag {
+				log.Printf("Forward remote %v to local %v", forward.raddr, forward.laddr)
+				go func() {
+					err = forwardRemote(client, closedChannel, forward)
+					if err != nil {
+						log.Printf("Failed to forward remote port: %v", err)
+					}
+				}()
+			}
+
+			session.Wait()
+			terminal.Restore(0, oldState)
+
 			go func() {
-				err = forwardRemote(client, closedChannel, forward)
-				if err != nil {
-					log.Printf("Failed to forward remote port: %v", err)
-				}
+				closedChannel <- "close"
 			}()
 		}
-
-		session.Wait()
-		terminal.Restore(0, oldState)
-
-		go func() {
-			closedChannel <- "close"
-		}()
 	}
 }
