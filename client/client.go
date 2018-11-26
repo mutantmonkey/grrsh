@@ -68,7 +68,12 @@ func main() {
 			return err
 		}
 
-		backoff.Retry(dialOp, backoff.NewExponentialBackOff())
+		if enableRetry {
+			backoff.Retry(dialOp, backoff.NewExponentialBackOff())
+		} else {
+			err = dialOp()
+		}
+
 		if err != nil {
 			log.Fatalf("Failed to connect to %q: %v", serverAddr, err)
 		}
@@ -89,6 +94,10 @@ func main() {
 			default:
 				newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
 			}
+		}
+
+		if !enableRetry {
+			break
 		}
 	}
 }
