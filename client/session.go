@@ -45,7 +45,7 @@ func startSession(newChannel ssh.NewChannel) {
 
 				err = spawnShell(pt, tt, channel)
 				if err != nil {
-					log.Print("Failed to spawn shell: %v", err)
+					log.Printf("Failed to spawn shell: %v", err)
 					ok = false
 				}
 			case "window-change":
