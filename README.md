@@ -7,8 +7,8 @@ outgoing connections to the server, which can either provide an SSH client or
 proxy connections to a local port, allowing you to connect using a standard
 OpenSSH client.
 
-Many OpenSSH features are supported, including port forwarding, "netcat mode"
-(-W), and even scp.
+Many OpenSSH features are supported when using proxy mode, including port
+forwarding, "netcat mode" (-W), and even scp.
 
 ## Use Cases
 * Network or "Internet of Things" devices where port forwarding is difficult or
