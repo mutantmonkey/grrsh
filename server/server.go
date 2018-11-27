@@ -219,12 +219,12 @@ func main() {
 
 			for _, forward := range remoteForwardsFlag {
 				log.Printf("Forward remote %v to local %v", forward.raddr, forward.laddr)
-				go func() {
+				go func(forward forwardPair) {
 					err = forwardRemote(client, closedChannel, forward)
 					if err != nil {
 						log.Printf("Failed to forward remote port: %v", err)
 					}
-				}()
+				}(forward)
 			}
 
 			session.Wait()
