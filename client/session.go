@@ -26,21 +26,60 @@ func startSession(newChannel ssh.NewChannel) {
 		for req := range in {
 			ok := false
 			switch req.Type {
+			case "exec":
+				ok = true
+				cmdLen := binary.BigEndian.Uint32(req.Payload)
+				cmdLine := string(req.Payload[4 : cmdLen+4])
+
+				// Run the command using the default shell
+				cmd := exec.Command(defaultShell, "-c", cmdLine)
+				if tt != nil {
+					err = startInPty(cmd, pt, tt, channel)
+					if err != nil {
+						log.Printf("Failed to execute command: %v", err)
+						ok = false
+					}
+				} else {
+					cmd.Stdin = channel
+					cmd.Stdout = channel
+					cmd.Stderr = channel
+					err := cmd.Start()
+					if err != nil {
+						log.Printf("Failed to run command: %v", err)
+						channel.Close()
+						ok = false
+					} else {
+						ok = true
+						go func() {
+							cmd.Process.Wait()
+							channel.Close()
+						}()
+					}
+				}
 			case "pty-req":
 				ok = true
 				pt, tt, err = pty.Open()
 				if err != nil {
 					log.Printf("Failed to open PTY: %v", err)
-					return
+					ok = false
+				} else {
+					ws := parsePtyReq(req.Payload)
+					pty.Setsize(pt, ws)
 				}
-				ws := parsePtyReq(req.Payload)
-				pty.Setsize(pt, ws)
 			case "shell":
 				ok = true
 				if len(req.Payload) > 0 {
 					// only the default shell
 					// is allowed
 					ok = false
+				}
+
+				if pt == nil || tt == nil {
+					pt, tt, err = pty.Open()
+					if err != nil {
+						log.Printf("Failed to open PTY: %v", err)
+						ok = false
+					}
 				}
 
 				err = spawnShell(pt, tt, channel)
@@ -58,36 +97,27 @@ func startSession(newChannel ssh.NewChannel) {
 	}(requests)
 }
 
-func spawnShell(pt *os.File, tt *os.File, channel ssh.Channel) (err error) {
-	shell := exec.Command(defaultShell)
+func startInPty(cmd *exec.Cmd, pt *os.File, tt *os.File, channel ssh.Channel) (err error) {
+	cmd.Stdout = tt
+	cmd.Stdin = tt
+	cmd.Stderr = tt
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setctty = true
+	cmd.SysProcAttr.Setsid = true
+
+	err = cmd.Start()
 
 	teardown := func() {
 		channel.Close()
 
-		// wait for shell to terminate on a best effort basis
+		// wait for command to terminate on a best effort basis
 		// this can fail if the process has already terminated, but we
 		// don't care, so errors are ignored
-		_, _ = shell.Process.Wait()
+		_, _ = cmd.Process.Wait()
 
 		pt.Close()
-	}
-
-	if pt != nil && tt != nil {
-		shell.Stdout = tt
-		shell.Stdin = tt
-		shell.Stderr = tt
-		if shell.SysProcAttr == nil {
-			shell.SysProcAttr = &syscall.SysProcAttr{}
-		}
-		shell.SysProcAttr.Setctty = true
-		shell.SysProcAttr.Setsid = true
-		err = shell.Start()
-	} else {
-		pt, err = pty.Start(shell)
-	}
-
-	if err != nil {
-		return
 	}
 
 	// connect the pipes
@@ -100,11 +130,17 @@ func spawnShell(pt *os.File, tt *os.File, channel ssh.Channel) (err error) {
 		io.Copy(pt, channel)
 		once.Do(teardown)
 	}()
+	go func() {
+		cmd.Process.Wait()
+		once.Do(teardown)
+	}()
 
-	shell.Process.Wait()
-	once.Do(teardown)
+	return
+}
 
-	return nil
+func spawnShell(pt *os.File, tt *os.File, channel ssh.Channel) error {
+	shell := exec.Command(defaultShell)
+	return startInPty(shell, pt, tt, channel)
 }
 
 func parsePtyReq(b []byte) *pty.Winsize {
@@ -123,11 +159,19 @@ func parsePtyReq(b []byte) *pty.Winsize {
 
 // parse window size from payload
 func parseWinChange(b []byte) *pty.Winsize {
-	ws := &pty.Winsize{
-		Rows: uint16(binary.BigEndian.Uint32(b[4:])),
-		Cols: uint16(binary.BigEndian.Uint32(b)),
-		X:    uint16(binary.BigEndian.Uint32(b[8:])),
-		Y:    uint16(binary.BigEndian.Uint32(b[12:])),
+	var ws *pty.Winsize
+	if len(b) > 8 {
+		ws = &pty.Winsize{
+			Rows: uint16(binary.BigEndian.Uint32(b[4:])),
+			Cols: uint16(binary.BigEndian.Uint32(b)),
+			X:    uint16(binary.BigEndian.Uint32(b[8:])),
+			Y:    uint16(binary.BigEndian.Uint32(b[12:])),
+		}
+	} else {
+		ws = &pty.Winsize{
+			Rows: uint16(binary.BigEndian.Uint32(b[4:])),
+			Cols: uint16(binary.BigEndian.Uint32(b)),
+		}
 	}
 	return ws
 }
