@@ -45,7 +45,7 @@ func startSession(newChannel ssh.NewChannel) {
 					cmd.Stderr = channel
 					err := cmd.Start()
 					if err != nil {
-						log.Printf("Failed to run command: %v", err)
+						log.Printf("Failed to execute command: %v", err)
 						channel.Close()
 						ok = false
 					} else {
