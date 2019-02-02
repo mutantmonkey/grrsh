@@ -75,12 +75,20 @@ func main() {
 		}
 
 		if err != nil {
-			log.Fatalf("Failed to connect to %q: %v", serverAddr, err)
+			if !enableRetry {
+				log.Fatalf("Failed to connect to %q: %v", serverAddr, err)
+			} else {
+				continue
+			}
 		}
 
 		_, chans, reqs, err := ssh.NewServerConn(c, config)
 		if err != nil {
-			log.Fatalf("Failed to handshake: %v", err)
+			if !enableRetry {
+				log.Fatalf("Failed to handshake: %v", err)
+			} else {
+				continue
+			}
 		}
 
 		go ssh.DiscardRequests(reqs)
